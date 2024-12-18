@@ -40,10 +40,15 @@ async function run() {
     const jobsCollection = client.db('jobPortal').collection('jobs');
     const jobApplicationCollection = client.db('jobPortal').collection('job_Applications');
 
-
+    //jpb related apis
     // get all data 
     app.get('/jobs', async (req, res) => {
-        const cursor = jobsCollection.find({});
+      const email= req.query.email;
+      let query = {};
+      if(email){
+        query = {hr_email: email};
+      }
+        const cursor = jobsCollection.find(query);
         const result = await cursor.toArray();
         res.json(result);
     });
@@ -83,9 +88,47 @@ async function run() {
     app.post('/job-applications', async (req, res) => { // first a server a /job-applications path create korsi then client side theke data pathanor jonno /job-applications a fetch korsi then post method use korsi (ApplyJob.jsx a ) 
       const application = req.body;
       const result = await jobApplicationCollection.insertOne(application)
+
+      // Not the best way{use aggregate} try to skip
+      const id= application.job_id;
+      const query = { _id: new ObjectId(id)};
+      const job = await jobsCollection.findOne(query);
+      // console.log(job);
+      let newCount = 0;
+      if(job.applicationCount){
+        newCount = job.applicationCount + 1;
+      }
+      else{
+        newCount = 1;
+      }
+      // now update the job info
+      const filter= { _id: new ObjectId(id)};
+      const updateDoc = {
+        $set: {
+          applicationCount: newCount
+        },
+      };
+
+      const updateResult= await jobsCollection.updateOne(filter, updateDoc);
+
+
       res.send(result);
       
     });
+
+    // add new job, creating a job
+    app.post('/jobs', async (req, res) => {
+      const newJob = req.body;
+      const result = await jobsCollection.insertOne(newJob);
+      res.send(result);
+    });
+
+    app.get('/job-applications/jobs/:job_id',async (req, res) => {
+      const jobId = req.params.job_id;
+      const query = {job_id: jobId};
+      const result = await jobApplicationCollection.find(query).toArray();
+      res.send(result);
+    }); // get all applications for a specific job
 
 
 
