@@ -1,12 +1,44 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
 const port = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:5173'],
+    credentials: true,
+}));
 app.use(express.json());
+app.use(cookieParser());
+
+const logger = (req, res, next) => {
+    console.log('Logging route');
+    next();
+};
+
+const verifyToken = (req, res, next) => {
+  console.log('Verifying token middleware', req.cookies);
+  const token = req?.cookies?.token;
+
+  if(!token){
+    return res.status(404).send({message: 'Unauthorized : Token not found'});
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if(err){
+      return res.status(401).send({message: 'Invalid token'});
+    }
+    req.user = decoded;
+    next();  
+  });
+
+  
+}
+
+
 
 
 app.get('/', (req, res) => {
@@ -40,9 +72,28 @@ async function run() {
     const jobsCollection = client.db('jobPortal').collection('jobs');
     const jobApplicationCollection = client.db('jobPortal').collection('job_Applications');
 
+
+    // Auth Related APIs-- 
+    app.post('/jwt',async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.JWT_SECRET , {expiresIn: '1h'});
+
+      res.cookie('token', token, {httpOnly:true, secure:false})
+      .send({success: true});
+
+    }); // login
+
+
+
+
+
+
+
+
     //jpb related apis
     // get all data 
-    app.get('/jobs', async (req, res) => {
+    app.get('/jobs', logger,  async (req, res) => {
+      console.log('Now inside the api callback');
       const email= req.query.email;
       let query = {};
       if(email){
@@ -63,9 +114,16 @@ async function run() {
 
     // Query parameter - example -> ? name=value&name=value
     // get all data , get one data, get some data [0,1, many]
-    app.get('/job-application', async (req, res) => {
+    app.get('/job-application', verifyToken, async (req, res) => {
       const email = req.query.email;
-      const query = {applicant_email : email};
+      const query = {applicant_email: email};
+      console.log("cuk cuk cookies:  ",req.cookies);
+      if(req.user.email !== req.user.email){
+        return res.status(403).send({message: 'Forbiden access'});
+      }
+
+      
+
       const result = await jobApplicationCollection.find(query).toArray();
 
       for(const application of result) {
@@ -129,6 +187,19 @@ async function run() {
       const result = await jobApplicationCollection.find(query).toArray();
       res.send(result);
     }); // get all applications for a specific job
+
+    app.patch('/job-applications/:id', async (req, res) => {
+      const id = req.params.id;
+      const data = req.body;
+      const filter = { _id: new ObjectId(id)};
+      const updateDoc = {
+        $set: {
+          status: data.status
+        },
+      };
+      const result = await jobApplicationCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    }); // update a job application status
 
 
 
